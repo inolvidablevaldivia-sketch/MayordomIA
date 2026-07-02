@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  # Backend API + Bot
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    env_file:
+      - ./backend/.env
+    environment:
+      - APP_ENV=development
+      - APP_DEBUG=true
+    restart: unless-stopped
+    networks:
+      - mayordomia
+
+  # Dashboard Web
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./dashboard:/app
+      - /app/node_modules
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend:8000/api
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - mayordomia
+
+networks:
+  mayordomia:
+    driver: bridge

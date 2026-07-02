@@ -1,0 +1,88 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+*.whl
+.Python
+env/
+venv/
+.venv/
+pip-wheel-metadata/
+
+# Environment
+.env
+*.env.local
+*.env.production
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+.next/
+out/
+.npm/
+.pnpm-store/
+
+# Build
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+
+# Temp
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Docker
+.docker/
+
+# Project-specific
+.arena/
+*.gserviceaccount.com.json
+firebase-debug.log
+ui-debug.log
+
+# Testing
+.pytest_cache/
+.tox/
+
+# Mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# macOS
+.DS_Store
+
+# Generated images / audio from AI
+backend/generated/
+dashboard/public/generated/
