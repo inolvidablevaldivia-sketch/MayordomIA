@@ -227,40 +227,77 @@ def _parsear_respuesta(texto: str) -> dict[str, Any]:
 async def extraer_de_boleta(texto_ocr: str) -> dict[str, Any]:
     """
     Extrae información estructurada de una boleta/factura usando OCR previo.
+    Soporta texto OCR sucio y correcciones manuales del usuario.
     """
     client = _get_client()
 
-    prompt = f"""Eres un extractor de datos de boletas chilenas.
+    prompt = f"""Eres un extractor de datos de boletas chilenas. Tu tarea es extraer información estructurada incluso si el texto tiene errores de OCR.
 
-Analiza el siguiente texto extraído por OCR de una boleta/factura y devuelve un JSON con:
+Analiza el siguiente texto y devuelve un JSON con:
 
-- comercio_nombre: nombre del local
-- fecha: en formato ISO (YYYY-MM-DD)
-- items: lista de {{producto_nombre, cantidad, precio_unitario, subtotal}}
-- total: total de la boleta
-- numero_documento: número de boleta si es visible
-- moneda: CLP asumiendo pesos chilenos
+- comercio_nombre: nombre del local o comercio (ej: "La Barata", "Jumbo", "Lider")
+- fecha: en formato ISO (YYYY-MM-DD). Si no hay fecha, usa null.
+- items: lista de productos. Para cada uno: {{"producto_nombre": "...", "cantidad": 1.0, "precio_unitario": 1000, "subtotal": 1000}}
+- total: el TOTAL final de la boleta (número, sin signo $)
+- numero_documento: número de boleta si es visible, si no, null
+- moneda: "CLP"
 
-Agrupa productos repetidos (mismo producto en múltiples líneas).
-Si no puedes identificar algo, déjalo como null.
+REGLAS IMPORTANTES:
+1. AGRUPA productos repetidos (ej: si aparece "NEUCOBER 404" dos veces, súmalos en cantidad)
+2. IGNORA líneas que no sean productos (direcciones, RUT, "NETO", "IVA", "VUELTO", "www.", etc.)
+3. El PRECIO UNITARIO se calcula como subtotal / cantidad
+4. Si el texto está muy dañado, haz tu mejor esfuerzo con lo que haya
+5. Nombres de productos: limpia prefijos como números sueltos, normaliza mayúsculas
+6. Si ves "NEUCOBER", "NENICOBER", "NEUCABER" o similares, normaliza a "Neucober"
+7. SIEMPRE responde con JSON válido. Si no puedes extraer items, usa lista vacía [].
 
-Texto OCR:
+Texto a analizar:
 {texto_ocr}
 
-Responde SOLO con JSON válido, sin markdown."""
+Responde SOLO con JSON válido, sin markdown, sin explicaciones."""
 
     try:
         response = client.models.generate_content(
             model=settings.GEMINI_MODEL,
             contents=[prompt],
-            config={"temperature": 0.1, "max_output_tokens": 1024},
+            config={"temperature": 0.1, "max_output_tokens": 2048},
         )
         texto = response.text.strip()
+        # Limpiar markdown si viene envuelto
         if texto.startswith("```"):
-            texto = texto.split("```")[1]
+            partes = texto.split("```")
+            texto = partes[1] if len(partes) > 1 else partes[0]
             if texto.startswith("json"):
                 texto = texto[4:]
-        return json.loads(texto)
+            texto = texto.strip()
+
+        result = json.loads(texto)
+
+        # Validar que tiene estructura mínima
+        if "items" not in result:
+            result["items"] = []
+        if "total" not in result:
+            result["total"] = 0
+
+        return result
+
+    except json.JSONDecodeError:
+        # Intentar de nuevo con un prompt más simple
+        try:
+            response2 = client.models.generate_content(
+                model=settings.GEMINI_MODEL,
+                contents=[prompt + "\n\nIMPORTANTE: Responde SOLO con JSON. Nada de texto adicional."],
+                config={"temperature": 0.0, "max_output_tokens": 2048},
+            )
+            texto2 = response2.text.strip()
+            if texto2.startswith("```"):
+                texto2 = texto2.split("```")[1]
+                if texto2.startswith("json"):
+                    texto2 = texto2[4:]
+            return json.loads(texto2.strip())
+        except Exception:
+            return {"error": "no se pudo parsear", "raw_text": texto_ocr}
+
     except Exception as e:
         return {"error": str(e), "raw_text": texto_ocr}
 

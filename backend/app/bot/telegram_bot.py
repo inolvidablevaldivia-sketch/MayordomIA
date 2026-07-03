@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 # En producción, esto debería estar en Firestore o Redis
 _historial: dict[str, list[dict]] = {}
 _pendientes: dict[str, dict] = {}  # acciones pendientes de confirmación
+_correccion_boleta: dict[str, str] = {}  # chat_id → texto OCR esperando corrección
 
 
 # ══════════════════════════════════════════════════════════════
@@ -261,6 +262,62 @@ async def manejar_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Enviar "escribiendo..."
     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
 
+    # ─── ¿Es una corrección de boleta? ───
+    if chat_id in _correccion_boleta:
+        await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+        try:
+            datos_boleta = await extraer_de_boleta(texto)
+            if "error" in datos_boleta:
+                await update.message.reply_text(
+                    f"⚠️ Todavía no pude interpretar la boleta. "
+                    f"Intenta escribirlo así:\n\n"
+                    f"`Comercio: La Barata\n"
+                    f"4x Neucober 404 Morado 1kg $6.390\n"
+                    f"2x Neucober 410 Blanco 1kg $9.585\n"
+                    f"Total: $44.730`",
+                    parse_mode="Markdown",
+                )
+                return
+
+            items_str = "\n".join([
+                f"  • {it.get('cantidad', 1)}x {it.get('producto_nombre', '?')} @ ${it.get('precio_unitario', 0):,.0f}"
+                for it in datos_boleta.get("items", [])
+            ])
+
+            chat_key = f"boleta_{chat_id}"
+            _pendientes[chat_key] = {
+                "accion": "registrar_compra",
+                "datos": {
+                    "tipo": "compra",
+                    "items": datos_boleta.get("items", []),
+                    "comercio_nombre": datos_boleta.get("comercio_nombre", ""),
+                    "total": datos_boleta.get("total", 0),
+                    "numero_documento": datos_boleta.get("numero_documento"),
+                    "fecha": datos_boleta.get("fecha"),
+                },
+            }
+
+            keyboard = [[
+                InlineKeyboardButton("✅ Sí, registrar", callback_data=f"confirmar_boleta|si|{chat_id}"),
+                InlineKeyboardButton("❌ No, cancelar", callback_data=f"confirmar_boleta|no|{chat_id}"),
+            ]]
+
+            await update.message.reply_text(
+                f"📄 **Boleta interpretada**\n\n"
+                f"🏪 {datos_boleta.get('comercio_nombre', 'Desconocido')}\n"
+                f"📅 {datos_boleta.get('fecha', '?')}\n\n"
+                f"{items_str}\n\n"
+                f"💰 Total: **${datos_boleta.get('total', 0):,.0f}**\n\n"
+                f"¿Registro esta compra?",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+            del _correccion_boleta[chat_id]
+            return
+        except Exception as e:
+            logger.error(f"Error procesando corrección de boleta: {e}")
+            del _correccion_boleta[chat_id]
+
     # ─── Construir contexto actualizado ───
     try:
         unidades = listar_unidades()
@@ -386,10 +443,17 @@ async def manejar_foto(update: Update, context: ContextTypes.DEFAULT_TYPE):
         datos_boleta = await extraer_de_boleta(texto_ocr)
 
         if "error" in datos_boleta:
+            # Guardar el texto OCR para que el usuario lo corrija
+            _correccion_boleta[chat_id] = texto_ocr
             await update.message.reply_text(
                 f"⚠️ Tuve problemas para interpretar la boleta. Esto es lo que leí:\n\n"
                 f"```\n{texto_ocr[:500]}\n```\n\n"
-                f"Puedes corregirme manualmente.",
+                f"**Corrígeme copiando y editando el texto arriba.**\n"
+                f"Ejemplo:\n"
+                f"`Comercio: La Barata\n"
+                f"4x Neucober 404 Morado 1kg $6.390\n"
+                f"2x Neucober 410 Blanco 1kg $9.585\n"
+                f"Total: $44.730`",
                 parse_mode="Markdown",
             )
             return
