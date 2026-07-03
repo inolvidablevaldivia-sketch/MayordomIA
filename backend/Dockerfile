@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir fastapi uvicorn gunicorn pydantic pydantic-settings python-dotenv python-telegram-bot "google-genai>=1.0.0" firebase-admin httpx python-multipart python-jose python-dateutil pendulum openpyxl Pillow pytesseract pdf2image
 
 COPY . .
 
