@@ -238,9 +238,15 @@ async def cmd_reporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cancela una operación pendiente."""
     chat_id = str(update.effective_chat.id)
+    cancelado = False
     if chat_id in _pendientes:
         del _pendientes[chat_id]
-        await update.message.reply_text("❌ Operación pendiente cancelada.")
+        cancelado = True
+    if chat_id in _correccion_boleta:
+        del _correccion_boleta[chat_id]
+        cancelado = True
+    if cancelado:
+        await update.message.reply_text("❌ Operación cancelada. ¿En qué puedo ayudarte?")
     else:
         await update.message.reply_text("No hay operaciones pendientes para cancelar.")
 
@@ -264,6 +270,15 @@ async def manejar_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ─── ¿Es una corrección de boleta? ───
     if chat_id in _correccion_boleta:
+
+                # Si mandó un comando, salir del modo corrección
+        if texto.startswith("/"):
+            del _correccion_boleta[chat_id]
+            await update.message.reply_text("❌ Corrección cancelada. ¿En qué puedo ayudarte?")
+            return
+
+
+
         await context.bot.send_chat_action(chat_id=chat_id, action="typing")
         try:
             datos_boleta = await extraer_de_boleta(texto)
@@ -277,6 +292,12 @@ async def manejar_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"Total: $44.730`",
                     parse_mode="Markdown",
                 )
+
+                # Si el regex tampoco pudo, sacar del modo corrección
+                del _correccion_boleta[chat_id]
+
+
+
                 return
 
             items_str = "\n".join([
